@@ -3,16 +3,6 @@
 ; MD5 implementation
 ;;based on rfc1321, wikipedia article, and https://raw.githubusercontent.com/CastixGitHub/racket-md5/master/md5.rkt
 ;;this is for owner learning only
-(define max-int32 #xffffffff)
-
-(define (bit-length msg)
-  (* (bytes-length msg) 8))
-
-(define (original-length msg)
-  (bitwise-and max-int32 (bit-length msg)))
-
-(define (add-bit-1-and-7-zero msg)
-  (bytes-append msg (bytes #b10000000)))
 
 ;; 64 bytes = 512 bits
 ;; 56 bytes = 448 bits
@@ -23,7 +13,12 @@
       (add-padding-zero (bytes-append msg (bytes 0)))))
 
 (define (add-padding-bit msg)
-  (bytes-append (add-padding-zero (add-bit-1-and-7-zero msg)) (integer->integer-bytes (original-length msg) 8 #f #f)))
+  (define (bit-length msg) (* (bytes-length msg) 8))
+  (define length (word-limit (bit-length msg)))
+  (define padded-msg (bytes-append msg (bytes #b10000000)))
+  (bytes-append
+   (add-padding-zero padded-msg)
+   (integer->integer-bytes length 8 #f #f)))
 
 (define s (list 7 12 17 22  7 12 17 22  7 12 17 22  7 12 17 22
                 5  9 14 20  5  9 14 20  5  9 14 20  5  9 14 20
@@ -45,57 +40,27 @@
 
 (define (digest msg)
   (define padded-msg (add-padding-bit msg))
-  (define a0 #x67452301)
-  (define b0 #xefcdab89)
-  (define c0 #x98badcfe)
-  (define d0 #x10325476)
+  (define-values (a0 b0 c0 d0)
+    (for/fold ([a0 #x67452301] [b0 #xefcdab89] [c0 #x98badcfe] [d0 #x10325476])
+              ([chunk (bytes-split padded-msg 64)])
+      (define M (for/list ([x (bytes-split chunk 4)])
+                  (integer-bytes->integer x #f #f)))
+      (define-values (A B C D)
+        (for/fold ([A a0] [B b0] [C c0] [D d0])
+                  ([i (in-range 64)])
+          (define-values (F1 g)
+            (cond
+              [(<= 0 i 15) (values (F B C D) i)]
+              [(<= 16 i 31) (values (G B C D) (modulo (add1 (* 5 i)) 16))]
+              [(<= 32 i 47) (values (H B C D) (modulo (word+ (* 3 i) 5) 16))]
+              [(<= 48 i 63) (values (I B C D) (modulo (* 7 i) 16))]))
+          (define dTemp D)
+          (define bTemp (word+ B (leftrotate (+ A F1 (list-ref K i) (list-ref M g)) (list-ref s i)))) 
+          (values dTemp bTemp B C)))
+    (values (word+ a0 A) (word+ b0 B) (word+ c0 C) (word+ d0 D))))
+  (appendAll a0 b0 c0 d0))
 
-  (for/list ([chunk (bytes-split padded-msg 64)])
-    (define A a0)
-    (define B b0)
-    (define C c0)
-    (define D d0)
-    (define M (for/list ([x (bytes-split chunk 4)])
-                (integer-bytes->integer x #f #f)))
-    (define F1 0)
-    (define g 0)
-
-    ;(display M)
-    (for/list ([i (in-range 64)])
-      (cond
-        [(<= 0 i 15)
-         (set! F1 (F B C D))
-         (set! g i)
-        ]
-        [(<= 16 i 31)
-         (set! F1 (G B C D))
-         (set! g (modulo (add1 (* 5 i)) 16))
-        ]
-        [(<= 32 i 47)
-         (set! F1 (H B C D))
-         (set! g (modulo (word+ (* 3 i) 5) 16))
-        ]
-        [(<= 48 i 63)
-         (set! F1 (I B C D))
-         (set! g (modulo (* 7 i) 16))
-        ]
-        )
-      (define dTemp D)
-      (set! D C)
-      (set! C B)
-      (set! B (word+ B (leftrotate (+ A F1 (list-ref K i) (list-ref M g)) (list-ref s i))))
-      (set! A dTemp)
-    )
-    (set! a0 (word+ a0 A))
-    (set! b0 (word+ b0 B))
-    (set! c0 (word+ c0 C))
-    (set! d0 (word+ d0 D))
-  )
-  (sumAll a0 b0 c0 d0)
-  
-)
-
-(define (sumAll a b c d)
+(define (appendAll a b c d)
   (define all-bytes
   (bytes-append
   (integer->integer-bytes a 4 #f #f)
@@ -119,7 +84,7 @@
   (for/list ([i (in-range (/ len size))])
     (subbytes bytes (* size i) (* size (add1 i)))))
 
-(define (word-limit x) (bitwise-and max-int32 x))
+(define (word-limit x) (bitwise-and #xffffffff x))
 (define (leftrotate x c)
   ;https://en.wikipedia.org/wiki/Circular_shift
   (set! x (word-limit x))
