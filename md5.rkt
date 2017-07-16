@@ -29,7 +29,6 @@
 (define K (for/list ([i (in-range 64)])
     (inexact->exact (floor (* (expt 2 32) (abs (sin (add1 i))))))))
 
-
 ;;F(X,Y,Z) = XY v not(X) Z
 (define (F x y z) (bitwise-ior (bitwise-and x y) (bitwise-and (bitwise-not x) z)))
 ;G(X,Y,Z) = XZ v Y not(Z)
@@ -78,7 +77,7 @@
 
 (require 2htdp/batch-io)
 
-(define (digest-file path) (digest-string (read-file path)))
+(define (digest-file path) (digest (file->bytes path)))
   
 ;helper function
 ;;used to split the message into 64 bytes chunks
