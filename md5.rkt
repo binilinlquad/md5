@@ -78,7 +78,7 @@
 (require 2htdp/batch-io)
 
 (define (digest-file path) (digest (file->bytes path)))
-  
+
 ;helper function
 ;;used to split the message into 64 bytes chunks
 ;;and to split each chunk into sixteen 4 bytes word
@@ -113,7 +113,7 @@
   (check-expect (digest #"a") "0cc175b9c0f1b6a831c399e269772661")
   (check-expect (digest #"Runs all of the tests specified by check forms in the current module and reports the") "21c0b2cbeee1c110d97c32925a469eeb")
   (check-expect (digest-string "a") "0cc175b9c0f1b6a831c399e269772661")
-  (check-expect (digest-file "/Users/chandra/Downloads/sicp.pdf") "3bed4a05ae7fc66cd90c2e292c70d2b4")
+  (check-expect (digest-file "sicp.pdf") "3bed4a05ae7fc66cd90c2e292c70d2b4")
   ;;run test
   (test)
 )
