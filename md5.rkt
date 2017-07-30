@@ -38,16 +38,23 @@
 ;I(X,Y,Z) = Y xor (X v not(Z))
 (define (I x y z) (bitwise-xor y (bitwise-ior x (bitwise-not z))))
 
-(define (digest msg)
+(define block-size 64)
+(define (eager-prepare msg)
   (define padded-msg (add-padding-bit msg))
-  (define-values (a0 b0 c0 d0)
+  ;;create list of 16 integer list
+  (for/list ([block (bytes-split padded-msg block-size)])
+              (for/list ([x (bytes-split block 4)])
+                (integer-bytes->integer x #f #f)))
+)
+
+(define (digest msg)
+  (define list-block (eager-prepare msg))
+  (define-values (a0 b0 c0 d0) 
     (for/fold ([a0 #x67452301] [b0 #xefcdab89] [c0 #x98badcfe] [d0 #x10325476])
-              ([chunk (bytes-split padded-msg 64)])
-      (define M (for/list ([x (bytes-split chunk 4)])
-                  (integer-bytes->integer x #f #f)))
+              ([chunk list-block])
       (define-values (A B C D)
         (for/fold ([A a0] [B b0] [C c0] [D d0])
-                  ([i (in-range 64)])
+                  ([i (in-range block-size)])
           (define-values (F1 g)
             (cond
               [(<= 0 i 15) (values (F B C D) i)]
@@ -55,7 +62,7 @@
               [(<= 32 i 47) (values (H B C D) (modulo (word+ (* 3 i) 5) 16))]
               [(<= 48 i 63) (values (I B C D) (modulo (* 7 i) 16))]))
           (define dTemp D)
-          (define bTemp (word+ B (leftrotate (+ A F1 (list-ref K i) (list-ref M g)) (list-ref s i)))) 
+          (define bTemp (word+ B (leftrotate (+ A F1 (list-ref K i) (list-ref chunk g)) (list-ref s i)))) ; M only be used here
           (values dTemp bTemp B C)))
     (values (word+ a0 A) (word+ b0 B) (word+ c0 C) (word+ d0 D))))
   (appendAll a0 b0 c0 d0))
@@ -78,7 +85,7 @@
 (require 2htdp/batch-io)
 
 (define (digest-file path) (digest (file->bytes path)))
-
+  
 ;helper function
 ;;used to split the message into 64 bytes chunks
 ;;and to split each chunk into sixteen 4 bytes word
