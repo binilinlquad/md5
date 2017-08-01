@@ -47,11 +47,27 @@
                 (integer-bytes->integer x #f #f)))
 )
 
-(define (digest msg)
-  (define list-block (eager-prepare msg))
+;; generator produce stream
+;; in-generator is used to generator as sequence
+(require racket/generator)
+(define (yield-prepare msg)
+  ;; add bit 1 and 0 into message 
+  (define padded-msg (add-padding-bit msg))
+  ;; create list of 16 integer list
+  (define (block->list/integer block)
+    (for/list ([x (bytes-split block 4)])
+             (integer-bytes->integer x #f #f)))
+  (in-generator 
+      (let loop ([blocks (bytes-split padded-msg block-size)])
+        (when (not (null? blocks))
+            (yield (block->list/integer (car blocks)))
+            (loop (cdr blocks)))
+        )))
+
+(define (digest seq-block)
   (define-values (a0 b0 c0 d0) 
     (for/fold ([a0 #x67452301] [b0 #xefcdab89] [c0 #x98badcfe] [d0 #x10325476])
-              ([chunk list-block])
+              ([chunk seq-block])
       (define-values (A B C D)
         (for/fold ([A a0] [B b0] [C c0] [D d0])
                   ([i (in-range block-size)])
@@ -80,12 +96,12 @@
            (~a #:width 2 #:pad-string "0" #:align 'right
                (number->string b 16)))))
 
-(define (digest-string str) (digest (string->bytes/utf-8 str)))
+(define (digest-bytes bytes) (digest (yield-prepare bytes)))
+(define (digest-string str) (digest (yield-prepare (string->bytes/utf-8 str))))
 
 (require 2htdp/batch-io)
+(define (digest-file path) (digest (yield-prepare (file->bytes path))))
 
-(define (digest-file path) (digest (file->bytes path)))
-  
 ;helper function
 ;;used to split the message into 64 bytes chunks
 ;;and to split each chunk into sixteen 4 bytes word
@@ -112,13 +128,13 @@
 ;Unit test
 (module+ test ;; add submodule test
   (require rackunit)
-  (check-equal? (digest #"Runs all of the tests specified by check forms in the current module and reports the") "21c0b2cbeee1c110d97c32925a469eeb")
-  (check-not-equal? (digest #"Runs all of the tests specified by check forms in the current module and reports the ") "21c0b2cbeee1c110d97c32925a469eeb")
+  (check-equal? (digest-bytes #"Runs all of the tests specified by check forms in the current module and reports the") "21c0b2cbeee1c110d97c32925a469eeb")
+  (check-not-equal? (digest-bytes #"Runs all of the tests specified by check forms in the current module and reports the ") "21c0b2cbeee1c110d97c32925a469eeb")
 
   ;Test
   (require test-engine/racket-tests)
-  (check-expect (digest #"a") "0cc175b9c0f1b6a831c399e269772661")
-  (check-expect (digest #"Runs all of the tests specified by check forms in the current module and reports the") "21c0b2cbeee1c110d97c32925a469eeb")
+  (check-expect (digest-bytes #"a") "0cc175b9c0f1b6a831c399e269772661")
+  (check-expect (digest-bytes #"Runs all of the tests specified by check forms in the current module and reports the") "21c0b2cbeee1c110d97c32925a469eeb")
   (check-expect (digest-string "a") "0cc175b9c0f1b6a831c399e269772661")
   (check-expect (digest-file "sicp.pdf") "3bed4a05ae7fc66cd90c2e292c70d2b4")
   ;;run test
