@@ -38,10 +38,6 @@
    (add-padding-zero padded-msg)
    (integer->integer-bytes length 8 #f #f)))
 
-(define (block->list/integer block)
-  (for/list ([x (bytes-split block 4)])
-    (integer-bytes->integer x #f #f)))
-
 ; calculate length after message padding
 (define (calculate original-length)
    (define length-after-1byte (add1 original-length))
@@ -62,8 +58,31 @@
             (loop (cdr blocks)))
         )))
 
+(define (prepare-msg str block-size)
+  (define msg-as-bytes (cond [(string? str) (string->bytes/utf-8 str)]
+                             [(bytes? str) str]))
+  (define msg-bits-length (* (bytes-length msg-as-bytes) 8))
+  (define msg-bytes-length (bytes-length msg-as-bytes))
+  (define pad-zero (make-bytes (- 56 (modulo (add1 msg-bytes-length) 64)) 0))
+  (define msg (open-input-bytes msg-as-bytes))
+  (define bit1 (open-input-bytes (bytes #b10000000)))
+  (define bit0 (open-input-bytes pad-zero))
+  (define length (open-input-bytes (integer->integer-bytes (word-limit msg-bits-length) 8 #f #f)))
+  (define port (input-port-append #t msg bit1 bit0 length))
+  ; body
+  (in-generator 
+      (let loop ([blocks (read-bytes block-size port)])
+        (when (not (eof-object? blocks))
+            (yield blocks)
+            (loop (read-bytes block-size port))
+        ))))
+
 (define (digest preprocessor msg)
   (define block-size 64)
+  (define (block->list/integer block)
+    (for/list ([x (bytes-split block 4)])
+      (integer-bytes->integer x #f #f)))
+
   (define-values (a0 b0 c0 d0) 
     (for/fold ([a0 #x67452301] [b0 #xefcdab89] [c0 #x98badcfe] [d0 #x10325476])
               ([chunk-bytes (preprocessor msg block-size)])
@@ -96,8 +115,8 @@
            (~a #:width 2 #:pad-string "0" #:align 'right
                (number->string b 16)))))
 
-(define (digest-bytes bytes) (digest yield-prepare bytes))
-(define (digest-string str) (digest yield-prepare (string->bytes/utf-8 str)))
+(define (digest-bytes bytes) (digest prepare-msg bytes))
+(define (digest-string str) (digest prepare-msg str))
 
 (require 2htdp/batch-io)
 (define (digest-file path) (digest yield-prepare (file->bytes path)))
