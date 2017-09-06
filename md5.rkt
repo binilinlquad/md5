@@ -58,7 +58,7 @@
   (let ([msg (open-input-bytes msg-as-bytes)]
         [bit1 (open-input-bytes (bytes #b10000000))]
         [bit0 (open-input-bytes pad-zero)]
-        [length (open-input-bytes (integer->integer-bytes (word-limit msg-bits-length) 8 #f #f))])
+        [length (open-input-bytes (integer->integer-bytes msg-bits-length 8 #f #f))])
     (define port (input-port-append #t msg bit1 bit0 length))
     ; body
     (in-generator 
@@ -76,7 +76,7 @@
   (let ([msg (open-input-file filename)]
         [bit1 (open-input-bytes (bytes #b10000000))]
         [bit0 (open-input-bytes pad-zero)]
-        [length (open-input-bytes (integer->integer-bytes (word-limit msg-bits-length) 8 #f #f))])
+        [length (open-input-bytes (integer->integer-bytes msg-bits-length 8 #f #f))])
     (define port (input-port-append #t msg bit1 bit0 length))
     ; body
     (in-generator 
@@ -170,6 +170,9 @@
   (check-expect (digest-bytes #"Runs all of the tests specified by check forms in the current module and reports the") "21c0b2cbeee1c110d97c32925a469eeb")
   (check-expect (digest-string "a") "0cc175b9c0f1b6a831c399e269772661")
   (check-expect (digest-file "sicp.pdf") "3bed4a05ae7fc66cd90c2e292c70d2b4")
+  ;(check-expect (digest-file "/Users/chandra/Downloads/and.then.there.were.none.s01e01.hdtv.x264-river[ettv].mp4") "56269101970f04ed1ec9e4d9d1c825ec")
+  (check-expect (digest-file "/Users/chandra/Downloads/hammerhead-lrx21o-factory-01315e08.tgz") "761667f1ddaf4e38d4792136df4ab927")
+
   ;;run test
   (test)
 )
