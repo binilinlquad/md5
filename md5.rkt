@@ -22,80 +22,56 @@
 ;I(X,Y,Z) = Y xor (X v not(Z))
 (define (I x y z) (bitwise-xor y (bitwise-ior x (bitwise-not z))))
 
-;; 64 bytes = 512 bits
-;; 56 bytes = 448 bits
-(define (add-padding-zero msg)
-  (define len (bytes-length msg))
-  (if (equal? (modulo len 64) 56)
-      msg
-      (add-padding-zero (bytes-append msg (bytes 0)))))
-
-(define (add-padding-bit msg)
-  (define (bit-length msg) (* (bytes-length msg) 8))
-  (define length (word-limit (bit-length msg)))
-  (define padded-msg (bytes-append msg (bytes #b10000000)))
-  (bytes-append
-   (add-padding-zero padded-msg)
-   (integer->integer-bytes length 8 #f #f)))
-
-; calculate length after message padding
-(define (calculate original-length)
-   (define length-after-1byte (add1 original-length))
-   (define length-zeroes (- 56 (modulo length-after-1byte 64)))
-   (+ length-after-1byte length-zeroes 8))
-
 ;; generator produce stream
 ;; in-generator is used to generator as sequence
 (require racket/generator)
 
+;; 64 bytes = 512 bits
+;; 56 bytes = 448 bits
+(define block-size 64)
+
 ;; Prepare String as input port
-(define (prepare-msg message block-size)
+(define (prepare-msg message)
   (define msg-as-bytes (cond [(string? message) (string->bytes/utf-8 message)]
                              [(bytes? message) message]))
   (define msg-bytes-length (bytes-length msg-as-bytes))
-  (define msg-bits-length (* msg-bytes-length 8))
-  (define pad-zero (make-bytes (- 56 (modulo (add1 msg-bytes-length) 64)) 0))
-  (let ([msg (open-input-bytes msg-as-bytes)]
-        [bit1 (open-input-bytes (bytes #b10000000))]
-        [bit0 (open-input-bytes pad-zero)]
-        [length (open-input-bytes (integer->integer-bytes msg-bits-length 8 #f #f))])
-    (define port (input-port-append #t msg bit1 bit0 length))
-    ; body
-    (in-generator 
-     (let loop ([blocks (read-bytes block-size port)])
-       (when (not (eof-object? blocks))
-         (yield blocks)
-         (loop (read-bytes block-size port))
-         )))))
+  (create-prepared-port (open-input-bytes msg-as-bytes) msg-bytes-length))
 
 ;; Prepare File as input port
-(define (prepare-file filename block-size)
-  (define msg-bytes-length (file-size filename))
+(define (prepare-file filename)
+  (create-prepared-port (open-input-file filename) (file-size filename))) 
+
+;; Actual prepare input-port
+(define (create-prepared-port msg-input-port msg-bytes-length)
   (define msg-bits-length (* msg-bytes-length 8))
   (define pad-zero (make-bytes (- 56 (modulo (add1 msg-bytes-length) 64)) 0))
-  (let ([msg (open-input-file filename)]
+  (let ([msg msg-input-port]
         [bit1 (open-input-bytes (bytes #b10000000))]
         [bit0 (open-input-bytes pad-zero)]
         [length (open-input-bytes (integer->integer-bytes msg-bits-length 8 #f #f))])
     (define port (input-port-append #t msg bit1 bit0 length))
     ; body
-    (in-generator 
+    (generate-block-sequence port block-size)))
+
+;; Generate prepared message as sequence
+(define (generate-block-sequence port block-size)
+      (in-generator 
      (let loop ([blocks (read-bytes block-size port)])
        (when (not (eof-object? blocks))
          (yield blocks)
          (loop (read-bytes block-size port))
-         )))))
+         ))))
 
 ;; Main Function
 (define (digest preprocessor msg)
-  (define block-size 64)
+  ;; convert bytes into integers
   (define (block->list/integer block)
     (for/list ([x (bytes-split block 4)])
       (integer-bytes->integer x #f #f)))
-
+  ;; Main Algorithm
   (define-values (a0 b0 c0 d0) 
     (for/fold ([a0 #x67452301] [b0 #xefcdab89] [c0 #x98badcfe] [d0 #x10325476])
-              ([chunk-bytes (preprocessor msg block-size)])
+              ([chunk-bytes (preprocessor msg)])
       (define chunk (block->list/integer chunk-bytes))
       (define-values (A B C D)
         (for/fold ([A a0] [B b0] [C c0] [D d0])
@@ -146,8 +122,6 @@
 (define (word+ w0 w1)
   (word-limit (+ w0 w1)))
 
-(define (split message)(bytes-split message 64))
-
 ;; Shortcut
 (define (digest-bytes bytes) (digest prepare-msg bytes))
 (define (digest-string str) (digest prepare-msg str))
@@ -163,15 +137,10 @@
 
   ;Test
   (require test-engine/racket-tests)
-  (check-expect (calculate (bytes-length #"Runs all of the tests specified by check forms in the current module and reports the"))
-                (bytes-length (add-padding-bit #"Runs all of the tests specified by check forms in the current module and reports the")))
-  
   (check-expect (digest-bytes #"a") "0cc175b9c0f1b6a831c399e269772661")
   (check-expect (digest-bytes #"Runs all of the tests specified by check forms in the current module and reports the") "21c0b2cbeee1c110d97c32925a469eeb")
   (check-expect (digest-string "a") "0cc175b9c0f1b6a831c399e269772661")
   (check-expect (digest-file "sicp.pdf") "3bed4a05ae7fc66cd90c2e292c70d2b4")
-  ;(check-expect (digest-file "/Users/chandra/Downloads/and.then.there.were.none.s01e01.hdtv.x264-river[ettv].mp4") "56269101970f04ed1ec9e4d9d1c825ec")
-  (check-expect (digest-file "/Users/chandra/Downloads/hammerhead-lrx21o-factory-01315e08.tgz") "761667f1ddaf4e38d4792136df4ab927")
 
   ;;run test
   (test)
