@@ -47,36 +47,46 @@
 ;; generator produce stream
 ;; in-generator is used to generator as sequence
 (require racket/generator)
-(define (yield-prepare msg block-size)
-  ; add bit 1 and 0 into message 
-  (define padded-msg (add-padding-bit msg))
-  ; create list of 16 integer list
-  (in-generator 
-      (let loop ([blocks (bytes-split padded-msg block-size)])
-        (when (not (null? blocks))
-            (yield (car blocks))
-            (loop (cdr blocks)))
-        )))
 
-(define (prepare-msg str block-size)
-  (define msg-as-bytes (cond [(string? str) (string->bytes/utf-8 str)]
-                             [(bytes? str) str]))
-  (define msg-bits-length (* (bytes-length msg-as-bytes) 8))
+;; Prepare String as input port
+(define (prepare-msg message block-size)
+  (define msg-as-bytes (cond [(string? message) (string->bytes/utf-8 message)]
+                             [(bytes? message) message]))
   (define msg-bytes-length (bytes-length msg-as-bytes))
+  (define msg-bits-length (* msg-bytes-length 8))
   (define pad-zero (make-bytes (- 56 (modulo (add1 msg-bytes-length) 64)) 0))
-  (define msg (open-input-bytes msg-as-bytes))
-  (define bit1 (open-input-bytes (bytes #b10000000)))
-  (define bit0 (open-input-bytes pad-zero))
-  (define length (open-input-bytes (integer->integer-bytes (word-limit msg-bits-length) 8 #f #f)))
-  (define port (input-port-append #t msg bit1 bit0 length))
-  ; body
-  (in-generator 
-      (let loop ([blocks (read-bytes block-size port)])
-        (when (not (eof-object? blocks))
-            (yield blocks)
-            (loop (read-bytes block-size port))
-        ))))
+  (let ([msg (open-input-bytes msg-as-bytes)]
+        [bit1 (open-input-bytes (bytes #b10000000))]
+        [bit0 (open-input-bytes pad-zero)]
+        [length (open-input-bytes (integer->integer-bytes (word-limit msg-bits-length) 8 #f #f))])
+    (define port (input-port-append #t msg bit1 bit0 length))
+    ; body
+    (in-generator 
+     (let loop ([blocks (read-bytes block-size port)])
+       (when (not (eof-object? blocks))
+         (yield blocks)
+         (loop (read-bytes block-size port))
+         )))))
 
+;; Prepare File as input port
+(define (prepare-file filename block-size)
+  (define msg-bytes-length (file-size filename))
+  (define msg-bits-length (* msg-bytes-length 8))
+  (define pad-zero (make-bytes (- 56 (modulo (add1 msg-bytes-length) 64)) 0))
+  (let ([msg (open-input-file filename)]
+        [bit1 (open-input-bytes (bytes #b10000000))]
+        [bit0 (open-input-bytes pad-zero)]
+        [length (open-input-bytes (integer->integer-bytes (word-limit msg-bits-length) 8 #f #f))])
+    (define port (input-port-append #t msg bit1 bit0 length))
+    ; body
+    (in-generator 
+     (let loop ([blocks (read-bytes block-size port)])
+       (when (not (eof-object? blocks))
+         (yield blocks)
+         (loop (read-bytes block-size port))
+         )))))
+
+;; Main Function
 (define (digest preprocessor msg)
   (define block-size 64)
   (define (block->list/integer block)
@@ -115,15 +125,9 @@
            (~a #:width 2 #:pad-string "0" #:align 'right
                (number->string b 16)))))
 
-(define (digest-bytes bytes) (digest prepare-msg bytes))
-(define (digest-string str) (digest prepare-msg str))
-
-(require 2htdp/batch-io)
-(define (digest-file path) (digest yield-prepare (file->bytes path)))
-
-;helper function
-;;used to split the message into 64 bytes chunks
-;;and to split each chunk into sixteen 4 bytes word
+;; Helper
+;; used to split the message into 64 bytes chunks
+;; and to split each chunk into sixteen 4 bytes word
 (define (bytes-split bytes size)
   (define len (bytes-length bytes))
   (unless (= 0 (modulo len size))
@@ -143,6 +147,13 @@
   (word-limit (+ w0 w1)))
 
 (define (split message)(bytes-split message 64))
+
+;; Shortcut
+(define (digest-bytes bytes) (digest prepare-msg bytes))
+(define (digest-string str) (digest prepare-msg str))
+
+(require 2htdp/batch-io)
+(define (digest-file path) (digest prepare-file path))
 
 ;; test
 (module+ test ;; add submodule test
