@@ -1,26 +1,42 @@
 #lang racket
 
-; MD5 implementation
-;;It is buggy when generate md5 for long text
-;;based on rfc1321, wikipedia article, and https://raw.githubusercontent.com/CastixGitHub/racket-md5/master/md5.rkt
-;;this is for owner learning only
+;;;; MD5 implementation
+;;;; It is buggy when generate md5 for long text
+;;;; based on rfc1321, wikipedia article, and https://raw.githubusercontent.com/CastixGitHub/racket-md5/master/md5.rkt
+;;;; this is for owner learning only
 
-(define s (list 7 12 17 22  7 12 17 22  7 12 17 22  7 12 17 22
-                5  9 14 20  5  9 14 20  5  9 14 20  5  9 14 20
-                4 11 16 23  4 11 16 23  4 11 16 23  4 11 16 23
-                6 10 15 21  6 10 15 21  6 10 15 21  6 10 15 21))
+;make these functions public
+(provide digest-bytes digest-string digest-file)
 
-(define K (for/list ([i (in-range 64)])
+;;;; Code:
+(define s
+  (list 7 12 17 22  7 12 17 22  7 12 17 22  7 12 17 22
+        5  9 14 20  5  9 14 20  5  9 14 20  5  9 14 20
+        4 11 16 23  4 11 16 23  4 11 16 23  4 11 16 23
+        6 10 15 21  6 10 15 21  6 10 15 21  6 10 15 21))
+
+(define K
+  (for/list ([i (in-range 64)])
     (inexact->exact (floor (* (expt 2 32) (abs (sin (add1 i))))))))
 
-;;F(X,Y,Z) = XY v not(X) Z
-(define (F x y z) (bitwise-ior (bitwise-and x y) (bitwise-and (bitwise-not x) z)))
+;F(X,Y,Z) = XY v not(X) Z
+(define (F x y z)
+  (bitwise-ior (bitwise-and x y)
+               (bitwise-and (bitwise-not x) z)))
+
 ;G(X,Y,Z) = XZ v Y not(Z)
-(define (G x y z) (bitwise-ior (bitwise-and x z) (bitwise-and y (bitwise-not z))))
+(define (G x y z)
+  (bitwise-ior (bitwise-and x z)
+               (bitwise-and y (bitwise-not z))))
+
 ;H(X,Y,Z) = X xor Y xor Z
-(define (H x y z) (bitwise-xor x y z))
+(define (H x y z)
+  (bitwise-xor x y z))
+
 ;I(X,Y,Z) = Y xor (X v not(Z))
-(define (I x y z) (bitwise-xor y (bitwise-ior x (bitwise-not z))))
+(define (I x y z)
+  (bitwise-xor y
+               (bitwise-ior x (bitwise-not z))))
 
 ;; generator produce stream
 ;; in-generator is used to generator as sequence
@@ -32,14 +48,17 @@
 
 ;; Prepare String as input port
 (define (prepare-msg message)
-  (define msg-as-bytes (cond [(string? message) (string->bytes/utf-8 message)]
+  (define msg-as-bytes
+    (cond [(string? message) (string->bytes/utf-8 message)]
                              [(bytes? message) message]))
-  (define msg-bytes-length (bytes-length msg-as-bytes))
-  (create-prepared-port (open-input-bytes msg-as-bytes) msg-bytes-length))
+  (define msg-bytes-length
+    (bytes-length msg-as-bytes))
+  (create-prepared-port
+   (open-input-bytes msg-as-bytes) msg-bytes-length))
 
 ;; Prepare File as input port
 (define (prepare-file filename)
-  (create-prepared-port (open-input-file filename) (file-size filename))) 
+  (create-prepared-port (open-input-file filename) (file-size filename)))
 
 ;; Actual prepare input-port
 (define (create-prepared-port msg-input-port msg-bytes-length)
@@ -55,12 +74,10 @@
 
 ;; Generate prepared message as sequence
 (define (generate-block-sequence port block-size)
-      (in-generator 
-     (let loop ([blocks (read-bytes block-size port)])
-       (when (not (eof-object? blocks))
-         (yield blocks)
-         (loop (read-bytes block-size port))
-         ))))
+      (in-generator (let loop ([blocks (read-bytes block-size port)])
+         (when (not (eof-object? blocks))
+           (yield blocks)
+           (loop (read-bytes block-size port))))))
 
 ;; Main Function
 (define (digest preprocessor msg)
@@ -69,7 +86,7 @@
     (for/list ([x (bytes-split block 4)])
       (integer-bytes->integer x #f #f)))
   ;; Main Algorithm
-  (define-values (a0 b0 c0 d0) 
+  (define-values (a0 b0 c0 d0)
     (for/fold ([a0 #x67452301] [b0 #xefcdab89] [c0 #x98badcfe] [d0 #x10325476])
               ([chunk-bytes (preprocessor msg)])
       (define chunk (block->list/integer chunk-bytes))
@@ -90,12 +107,11 @@
 
 (define (appendAll a b c d)
   (define all-bytes
-  (bytes-append
-  (integer->integer-bytes a 4 #f #f)
-  (integer->integer-bytes b 4 #f #f)
-  (integer->integer-bytes c 4 #f #f)
-  (integer->integer-bytes d 4 #f #f)
-  ))
+    (bytes-append
+     (integer->integer-bytes a 4 #f #f)
+     (integer->integer-bytes b 4 #f #f)
+     (integer->integer-bytes c 4 #f #f)
+     (integer->integer-bytes d 4 #f #f)))
   (apply string-append
          (for/list ([b all-bytes])
            (~a #:width 2 #:pad-string "0" #:align 'right
