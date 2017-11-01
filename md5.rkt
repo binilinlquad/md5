@@ -102,7 +102,7 @@
           (define dTemp D)
           (define bTemp (word+ B (leftrotate (+ A F1 (list-ref K i) (list-ref chunk g)) (list-ref s i)))) ; M only be used here
           (values dTemp bTemp B C)))
-    (values (word+ a0 A) (word+ b0 B) (word+ c0 C) (word+ d0 D))))
+      (values (word+ a0 A) (word+ b0 B) (word+ c0 C) (word+ d0 D))))
   (appendAll a0 b0 c0 d0))
 
 (define (appendAll a b c d)
