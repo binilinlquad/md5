@@ -1,14 +1,19 @@
 #lang racket
 
-;;;; MD5 implementation
-;;;; It is buggy when generate md5 for long text
-;;;; based on rfc1321, wikipedia article, and https://raw.githubusercontent.com/CastixGitHub/racket-md5/master/md5.rkt
-;;;; this is for owner learning only
+; MD5 implementation
+; It is buggy when generate md5 for long text
+; based on rfc1321, wikipedia article, and https://raw.githubusercontent.com/CastixGitHub/racket-md5/master/md5.rkt
+; this is for owner learning only
 
-;make these functions public
-(provide digest-bytes digest-string digest-file)
+(provide
+ ; produce md5 from bytes
+ digest-bytes
+ ; produce md5 from string
+ digest-string
+ ;produce md5 from file
+ digest-file)
 
-;;;; Code:
+; import and implementation
 (define s
   (list 7 12 17 22  7 12 17 22  7 12 17 22  7 12 17 22
         5  9 14 20  5  9 14 20  5  9 14 20  5  9 14 20
@@ -46,29 +51,72 @@
 (define block-size 64)
 
 ;; Main Function
-(define (digest msg-port)
-  ;; convert bytes into integers
-  (define (block->list/integer block)
-    (for/list ([x (bytes-split block 4)])
-      (integer-bytes->integer x #f #f)))
-  ;; Main Algorithm
+(define (bytes-split bytes size)
+  ; split message into 64 bytes chunks. Each chunk then splitted again into 16 of 4 bytes word
+  (let ([len (bytes-length bytes)])
+    (unless (= 0 (modulo len size))
+      ((raise-type-error
+        'split-bytes "byte string of length divisible by size" 0 bytes)))
+    (for/list ([i (in-range (/ len size))])
+      (subbytes bytes (* size i) (* size (add1 i))))))
+
+(define (bytes->list/16-word block)
+  ; convert bytes into into list of 16-word.
+  ; We are using integer here because it use the same bytes with word 
+  (for/list ([x (bytes-split block 4)])
+    (integer-bytes->integer x #f #f)))
+
+
+(define-values (wordA wordB wordC wordD)
+  ; definition of wordA, wordB, wordC, and wordD which will be used
+  ; as initial values in main part of algorithm 
+  (values #x67452301
+          #xefcdab89
+          #x98badcfe
+          #x10325476))
+
+;; Functions for define value a, b, c, and d after loop for list of 16-word
+(define op-A identity) 
+
+(define (opB b a F1 i g chunk)
+  (word+
+   b
+   (leftrotate
+    (+ a
+       F1
+       (list-ref K i)
+       (list-ref chunk g))
+    (list-ref s i))))
+
+(define op-C identity)
+
+(define op-D identity)
+
+(define (main-loop a0 b0 c0 d0 chunk)
+  ; loop operation for list of 16-word
+  (for/fold ([a a0] [b b0] [c c0] [d d0])
+            ([i (in-range block-size)])
+    (define-values (F1 g)
+      (cond
+        [(<= 0 i 15) (values (F b c d) i)]
+        [(<= 16 i 31) (values (G b c d) (modulo (add1 (* 5 i)) 16))]
+        [(<= 32 i 47) (values (H b c d) (modulo (word+ (* 3 i) 5) 16))]
+        [(<= 48 i 63) (values (I b c d) (modulo (* 7 i) 16))]))
+    ; interchange values A, B , C, D
+    (values (op-A d) (opB b a F1 i g chunk) (op-C b) (op-D c))))
+
+(define (digest input-port)
+  ; Main Algorithm
   (define-values (a0 b0 c0 d0)
-    (for/fold ([a0 #x67452301] [b0 #xefcdab89] [c0 #x98badcfe] [d0 #x10325476])
-              ([chunk-bytes msg-port])
-      (define chunk (block->list/integer chunk-bytes))
-      (define-values (A B C D)
-        (for/fold ([A a0] [B b0] [C c0] [D d0])
-                  ([i (in-range block-size)])
-          (define-values (F1 g)
-            (cond
-              [(<= 0 i 15) (values (F B C D) i)]
-              [(<= 16 i 31) (values (G B C D) (modulo (add1 (* 5 i)) 16))]
-              [(<= 32 i 47) (values (H B C D) (modulo (word+ (* 3 i) 5) 16))]
-              [(<= 48 i 63) (values (I B C D) (modulo (* 7 i) 16))]))
-          (define dTemp D)
-          (define bTemp (word+ B (leftrotate (+ A F1 (list-ref K i) (list-ref chunk g)) (list-ref s i)))) ; M only be used here
-          (values dTemp bTemp B C)))
-      (values (word+ a0 A) (word+ b0 B) (word+ c0 C) (word+ d0 D))))
+    (for/fold ([a0 wordA] [b0 wordB] [c0 wordC] [d0 wordD])
+              ([chunk input-port])
+      (let*-values ([(list-16-word) (bytes->list/16-word chunk)]
+                    [(blockA blockB blockC blockD)
+                     (main-loop a0 b0 c0 d0 list-16-word)])
+        (values (word+ a0 blockA)
+                (word+ b0 blockB)
+                (word+ c0 blockC)
+                (word+ d0 blockD)))))
   ; concat result as string
   (appendAll a0 b0 c0 d0))
 
@@ -88,15 +136,6 @@
                  (number->string b 16))))))
 
 
-(define (bytes-split bytes size)
-  ; split message into 64 bytes chunks. Each chunk then splitted again into 16 of 4 bytes word
-  (define len (bytes-length bytes))
-  (unless (= 0 (modulo len size))
-    ((raise-type-error
-      'split-bytes "byte string of length divisible by size" 0 bytes)))
-  (for/list ([i (in-range (/ len size))])
-    (subbytes bytes (* size i) (* size (add1 i)))))
-
 (define (word-limit x) (bitwise-and #xffffffff x))
 (define (leftrotate x c)
   ;https://en.wikipedia.org/wiki/Circular_shift
@@ -113,10 +152,14 @@
         [(bytes? message) message]))
 
 (define (pad-zero-amount length-in-bytes)
+  ; calculate how much zero is needed to padded
+  ; to end of message before 1-bit1, n-bit0, and
+  ; original message lenth
   (- 56 (modulo (add1 length-in-bytes) 64)))
   
 (define (prepare-message text file?)
-  ; Prepare provided text as input port. Text could be string, bytes, or filepath
+  ; Prepare and convert text as input port.
+  ; Text could be string, bytes, or filepath
   (define-values (msg-input-port msg-bytes-length)
     (if file?
         (values (open-input-file text) (file-size text))
@@ -125,14 +168,17 @@
   (create-prepared-port msg-input-port msg-bytes-length))
 
 (define (create-prepared-port msg-input-port msg-bytes-length)
-  ; Actual creation input-port for processing
   (let* ([msg-bits-length (* msg-bytes-length 8)]
+         ; create bit zero to be add at end message
          [pad-zero (make-bytes (pad-zero-amount msg-bytes-length) 0)]
+         ; one bit 1 and rest of bit 0
          [bit1 (open-input-bytes (bytes #b10000000))]
+         ; more of bit 0es
          [bit0 (open-input-bytes pad-zero)]
+         ; length of original message
          [length (open-input-bytes (integer->integer-bytes msg-bits-length 8 #f #f))]
          [port (input-port-append #t msg-input-port bit1 bit0 length)])
-    ; body
+    ; create input-port from message, zero-pad, bit 1, bit 0, and message length 
     (generate-block-sequence port block-size)))
 
 (define (generate-block-sequence port block-size)
@@ -143,26 +189,25 @@
                     (loop (read-bytes block-size port))))))
 
 
-;; Shortcut
+; Shortcut
 (define (digest-bytes bytes) (digest (prepare-message bytes #f)))
 (define (digest-string str) (digest (prepare-message str #f)))
 
 (require 2htdp/batch-io)
 (define (digest-file path) (digest (prepare-message path #t)))
 
-;; test
-(module+ test ;; add submodule test
+; test
+(module+ test ; add submodule test
   (require rackunit)
   (check-equal? (digest-bytes #"Runs all of the tests specified by check forms in the current module and reports the") "21c0b2cbeee1c110d97c32925a469eeb")
   (check-not-equal? (digest-bytes #"Runs all of the tests specified by check forms in the current module and reports the ") "21c0b2cbeee1c110d97c32925a469eeb")
 
-  ;Test
   (require test-engine/racket-tests)
   (check-expect (digest-bytes #"a") "0cc175b9c0f1b6a831c399e269772661")
   (check-expect (digest-bytes #"Runs all of the tests specified by check forms in the current module and reports the") "21c0b2cbeee1c110d97c32925a469eeb")
   (check-expect (digest-string "a") "0cc175b9c0f1b6a831c399e269772661")
   (check-expect (digest-file "sicp.pdf") "3bed4a05ae7fc66cd90c2e292c70d2b4")
 
-  ;;run test
+  ;run test
   (test)
   )
