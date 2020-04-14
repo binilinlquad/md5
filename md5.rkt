@@ -202,7 +202,8 @@
   (check-equal? (digest-bytes #"Runs all of the tests specified by check forms in the current module and reports the") "21c0b2cbeee1c110d97c32925a469eeb")
   (check-not-equal? (digest-bytes #"Runs all of the tests specified by check forms in the current module and reports the ") "21c0b2cbeee1c110d97c32925a469eeb")
 
-  (require test-engine/racket-tests)
+  (require (except-in test-engine/racket-tests
+                      check-within))
   (check-expect (digest-bytes #"a") "0cc175b9c0f1b6a831c399e269772661")
   (check-expect (digest-bytes #"Runs all of the tests specified by check forms in the current module and reports the") "21c0b2cbeee1c110d97c32925a469eeb")
   (check-expect (digest-string "a") "0cc175b9c0f1b6a831c399e269772661")
