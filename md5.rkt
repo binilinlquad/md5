@@ -13,7 +13,17 @@
  ;produce md5 from file
  digest-file)
 
-; import and implementation
+;;; import and implementation
+
+;; generator produce stream
+;; in-generator is used to generator as sequence
+(require racket/generator)
+
+;; 64 bytes = 512 bits
+;; 56 bytes = 448 bits
+(define block-size 64)
+
+
 (define s
   (list 7 12 17 22  7 12 17 22  7 12 17 22  7 12 17 22
         5  9 14 20  5  9 14 20  5  9 14 20  5  9 14 20
@@ -23,6 +33,19 @@
 (define K
   (for/list ([i (in-range 64)])
     (inexact->exact (floor (* (expt 2 32) (abs (sin (add1 i))))))))
+
+;; Four-word buffer (A, B, C, D) will be used compute message digest
+;; See rfc1321 section 3.3
+(define-values (wordA wordB wordC wordD)
+  (values #x67452301
+          #xefcdab89
+          #x98badcfe
+          #x10325476))
+
+
+;; Four auxilary functions that each take as input three 32-bit words
+;; and produce as output one 32-bit word
+;; see rfc1321 section 3.4
 
 ;F(X,Y,Z) = XY v not(X) Z
 (define (F x y z)
@@ -42,15 +65,6 @@
 (define (I x y z)
   (bitwise-xor y (bitwise-ior x (bitwise-not z))))
 
-;; generator produce stream
-;; in-generator is used to generator as sequence
-(require racket/generator)
-
-;; 64 bytes = 512 bits
-;; 56 bytes = 448 bits
-(define block-size 64)
-
-;; Main Function
 (define (bytes-split bytes size)
   ; split message into 64 bytes chunks. Each chunk then splitted again into 16 of 4 bytes word
   (let ([len (bytes-length bytes)])
@@ -66,14 +80,6 @@
   (for/list ([x (bytes-split block 4)])
     (integer-bytes->integer x #f #f)))
 
-
-(define-values (wordA wordB wordC wordD)
-  ; definition of wordA, wordB, wordC, and wordD which will be used
-  ; as initial values in main part of algorithm 
-  (values #x67452301
-          #xefcdab89
-          #x98badcfe
-          #x10325476))
 
 ;; Functions for define value a, b, c, and d after loop for list of 16-word
 (define op-A identity) 
@@ -156,18 +162,25 @@
   ; to end of message before 1-bit1, n-bit0, and
   ; original message lenth
   (- 56 (modulo (add1 length-in-bytes) 64)))
-  
+
+
+(define (text->message text)
+  (let ([msg-bytes (message->bytes text)])
+    (values (open-input-bytes msg-bytes) (bytes-length msg-bytes))))
+
+(define (file->message file)
+  (values (open-input-file file) (file-size file)))
+
 (define (prepare-message text file?)
   ; Prepare and convert text as input port.
   ; Text could be string, bytes, or filepath
   (define-values (msg-input-port msg-bytes-length)
     (if file?
-        (values (open-input-file text) (file-size text))
-        (let ([msg-bytes (message->bytes text)])
-          (values (open-input-bytes msg-bytes) (bytes-length msg-bytes)))))
-  (create-prepared-port msg-input-port msg-bytes-length))
+        (file->message text)
+        (text->message text)))
+  (input-port->block-sequence msg-input-port msg-bytes-length))
 
-(define (create-prepared-port msg-input-port msg-bytes-length)
+(define (input-port->block-sequence msg-input-port msg-bytes-length)
   (let* ([msg-bits-length (* msg-bytes-length 8)]
          ; create bit zero to be add at end message
          [pad-zero (make-bytes (pad-zero-amount msg-bytes-length) 0)]
