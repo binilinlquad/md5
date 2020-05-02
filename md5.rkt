@@ -111,7 +111,9 @@
     ; interchange values A, B , C, D
     (values (op-A d) (opB b a F1 i g chunk) (op-C b) (op-D c))))
 
-(define (digest input-port)
+(define (digest message file?)
+  ; Prepare mesasge as input-port pad with 1 and 0 and message length
+  (define input-port (input-port->block-sequence message file?))
   ; Main Algorithm
   (define-values (a0 b0 c0 d0)
     (for/fold ([a0 wordA] [b0 wordB] [c0 wordC] [d0 wordD])
@@ -203,11 +205,11 @@
 
 
 ; Shortcut
-(define (digest-bytes bytes) (digest (input-port->block-sequence  bytes #f)))
-(define (digest-string str) (digest (input-port->block-sequence  str #f)))
+(define (digest-bytes bytes) (digest bytes #f))
+(define (digest-string str) (digest str #f))
 
 (require 2htdp/batch-io)
-(define (digest-file path) (digest (input-port->block-sequence  path #t)))
+(define (digest-file path) (digest path #t))
 
 ; test
 (module+ test ; add submodule test
