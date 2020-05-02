@@ -175,8 +175,7 @@
   ; create amount of zero-bit for adding at end message
   (make-bytes (pad-zero-amount msg-length-in-bytes) 0))
 
-(define (bytes->bits bytes)
-  (* bytes 8))
+(define (bytes->bits bytes) (* bytes 8))
 
 (define (input-port->block-sequence text file?)
  (define-values (msg-input-port msg-bytes-length)
