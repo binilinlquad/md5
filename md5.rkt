@@ -175,9 +175,7 @@
   ; Prepare and convert text as input port.
   ; Text could be string, bytes, or filepath
   (define-values (msg-input-port msg-bytes-length)
-    (if file?
-        (file->message text)
-        (text->message text)))
+    ((if file? file->message text->message) text))
   (input-port->block-sequence msg-input-port msg-bytes-length))
 
 (define (input-port->block-sequence msg-input-port msg-bytes-length)
