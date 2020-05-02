@@ -178,16 +178,24 @@
     ((if file? file->message text->message) text))
   (input-port->block-sequence msg-input-port msg-bytes-length))
 
+(define (zeroes-pad msg-length-in-bytes)
+  ; create amount of zero-bit for adding at end message
+  (make-bytes (pad-zero-amount msg-length-in-bytes) 0))
+
+(define (bytes->bits bytes)
+  (* bytes 8))
+
 (define (input-port->block-sequence msg-input-port msg-bytes-length)
-  (let* ([msg-bits-length (* msg-bytes-length 8)]
-         ; create bit zero to be add at end message
-         [pad-zero (make-bytes (pad-zero-amount msg-bytes-length) 0)]
-         ; one bit 1 and rest of bit 0
+  (let* (; one bit 1 and rest of bit 0
          [bit1 (open-input-bytes (bytes #b10000000))]
          ; more of bit 0es
-         [bit0 (open-input-bytes pad-zero)]
+         [bit0 (open-input-bytes (zeroes-pad msg-bytes-length))]
          ; length of original message
-         [length (open-input-bytes (integer->integer-bytes msg-bits-length 8 #f #f))]
+         [length (open-input-bytes (integer->integer-bytes
+                                    (bytes->bits msg-bytes-length)
+                                    8
+                                    #f
+                                    #f))]
          [port (input-port-append #t msg-input-port bit1 bit0 length)])
     ; create input-port from message, zero-pad, bit 1, bit 0, and message length 
     (generate-block-sequence port block-size)))
