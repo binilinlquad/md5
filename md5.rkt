@@ -171,13 +171,6 @@
 (define (file->message file)
   (values (open-input-file file) (file-size file)))
 
-(define (prepare-message text file?)
-  ; Prepare and convert text as input port.
-  ; Text could be string, bytes, or filepath
-  (define-values (msg-input-port msg-bytes-length)
-    ((if file? file->message text->message) text))
-  (input-port->block-sequence msg-input-port msg-bytes-length))
-
 (define (zeroes-pad msg-length-in-bytes)
   ; create amount of zero-bit for adding at end message
   (make-bytes (pad-zero-amount msg-length-in-bytes) 0))
@@ -185,7 +178,9 @@
 (define (bytes->bits bytes)
   (* bytes 8))
 
-(define (input-port->block-sequence msg-input-port msg-bytes-length)
+(define (input-port->block-sequence text file?)
+ (define-values (msg-input-port msg-bytes-length)
+    ((if file? file->message text->message) text))
   (let* (; one bit 1 and rest of bit 0
          [bit1 (open-input-bytes (bytes #b10000000))]
          ; more of bit 0es
@@ -209,11 +204,11 @@
 
 
 ; Shortcut
-(define (digest-bytes bytes) (digest (prepare-message bytes #f)))
-(define (digest-string str) (digest (prepare-message str #f)))
+(define (digest-bytes bytes) (digest (input-port->block-sequence  bytes #f)))
+(define (digest-string str) (digest (input-port->block-sequence  str #f)))
 
 (require 2htdp/batch-io)
-(define (digest-file path) (digest (prepare-message path #t)))
+(define (digest-file path) (digest (input-port->block-sequence  path #t)))
 
 ; test
 (module+ test ; add submodule test
